@@ -14,8 +14,8 @@ let _migrated = false;
 
 async function ensureMigrated() {
   if (_migrated) return;
-  await migrate();
   _migrated = true;
+  await migrate();
 }
 
 interface TursoRow {
