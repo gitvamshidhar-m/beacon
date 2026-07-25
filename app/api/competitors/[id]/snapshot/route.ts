@@ -3,10 +3,10 @@ import {
   getCompetitor,
   getLatestSnapshot,
   insertSnapshot,
-
-export const dynamic = "force-dynamic";
   insertChange,
 } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
 import { fetchPage } from "@/lib/fetcher";
 import { extractSignals, hashSignals } from "@/lib/signals";
 import { diffSnapshots } from "@/lib/differ";
