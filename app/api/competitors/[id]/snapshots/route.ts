@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCompetitor, listSnapshots } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 type Params = { params: { id: string } };
 
 // GET /api/competitors/:id/snapshots — snapshot timeline for a competitor

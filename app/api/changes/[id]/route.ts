@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getChange } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 type Params = { params: { id: string } };
 
 // GET /api/changes/:id — single change record with field diffs

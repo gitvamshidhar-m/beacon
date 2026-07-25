@@ -3,6 +3,8 @@ import {
   getCompetitor,
   getLatestSnapshot,
   insertSnapshot,
+
+export const dynamic = "force-dynamic";
   insertChange,
 } from "@/lib/db";
 import { fromHtml } from "@/lib/fetcher";

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { listRecentChanges } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/changes?limit=20 — recent changes across all competitors (dashboard feed)
 export async function GET(request: Request) {
   const url = new URL(request.url);

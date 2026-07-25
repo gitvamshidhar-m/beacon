@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { listCompetitors, createCompetitor } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/competitors — list all competitors
 export async function GET() {
   const competitors = await listCompetitors();

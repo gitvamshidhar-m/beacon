@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSnapshot } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 type Params = { params: { id: string } };
 
 // GET /api/snapshots/:id — full snapshot INCLUDING html (for the visual diff).

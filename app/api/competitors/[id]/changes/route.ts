@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCompetitor, listChanges } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 type Params = { params: { id: string } };
 
 // GET /api/competitors/:id/changes — detected changes for a competitor
