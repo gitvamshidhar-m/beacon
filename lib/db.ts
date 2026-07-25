@@ -23,8 +23,8 @@ interface TursoRow {
 }
 
 interface TursoResult {
-  columns: { name: string; decltype: string }[];
-  rows: TursoRow[];
+  cols: { name: string; decltype: string | null }[];
+  rows: { type: string; value: string | null }[][];
   affected_row_count: number;
   last_insert_rowid: string | null;
 }
@@ -89,14 +89,14 @@ async function exec(sql: string, args: (string | number | null)[] = []): Promise
 function rowsToObjects<T>(result: TursoResult): T[] {
   return result.rows.map((row) => {
     const obj: Record<string, unknown> = {};
-    result.columns.forEach((col, i) => {
-      const cell = row.cells[i];
+    result.cols.forEach((col, i) => {
+      const cell = row[i];
       obj[col.name] =
         cell?.type === "null" || cell?.value == null
           ? null
-          : cell.type === "integer"
+          : cell?.type === "integer"
           ? Number(cell.value)
-          : cell.value;
+          : cell?.value;
     });
     return obj as T;
   });
