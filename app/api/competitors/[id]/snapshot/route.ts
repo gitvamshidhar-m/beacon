@@ -5,11 +5,11 @@ import {
   insertSnapshot,
   insertChange,
 } from "@/lib/db";
-
-export const dynamic = "force-dynamic";
 import { fetchPage } from "@/lib/fetcher";
 import { extractSignals, hashSignals } from "@/lib/signals";
 import { diffSnapshots } from "@/lib/differ";
+
+export const dynamic = "force-dynamic";
 
 type Params = { params: { id: string } };
 
