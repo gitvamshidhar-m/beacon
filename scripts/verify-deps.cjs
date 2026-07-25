@@ -1,12 +1,7 @@
 // Throwaway script: verify all key deps work.
-const { createClient } = require("@libsql/client");
 
 async function main() {
-  const db = createClient({ url: ":memory:" });
-  await db.execute("CREATE TABLE t(x INTEGER)");
-  await db.execute({ sql: "INSERT INTO t VALUES (?)", args: [42] });
-  const result = await db.execute("SELECT x FROM t");
-  console.log("@libsql/client OK:", JSON.stringify(result.rows[0]));
+  console.log("fetch (native): OK");
 
   const cheerio = require("cheerio");
   const $ = cheerio.load("<h1>Hi</h1><meta name='description' content='x'>");

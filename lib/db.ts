@@ -1,25 +1,105 @@
-import { createClient, type Client } from "@libsql/client";
+// ============================================================================
+// Database layer — Turso (libSQL)
+// ----------------------------------------------------------------------------
+// Connects to Turso when TURSO_DATABASE_URL env var is set.
+// During builds (no env var), functions return empty data gracefully.
+// ============================================================================
+
 import type { Snapshot, Signals, Change } from "./types";
 
-// ============================================================================
-// Connection — Turso (libSQL)
-// ----------------------------------------------------------------------------
-// For local dev, set TURSO_DATABASE_URL to a local file:
-//   TURSO_DATABASE_URL=file:./data/beacon.db
-// For production (Vercel), use a Turso database:
-//   TURSO_DATABASE_URL=libsql://your-db.turso.io
-//   TURSO_AUTH_TOKEN=your-token
-// ============================================================================
+// Minimal SQLite-compatible client using only fetch().
+// Uses Turso's HTTP API (HRANA v2 protocol). No native modules needed.
 
-let _db: Client | null = null;
+let _migrated = false;
 
-function getDb(): Client {
-  if (_db) return _db;
-  _db = createClient({
-    url: process.env.TURSO_DATABASE_URL || ":memory:",
-    authToken: process.env.TURSO_AUTH_TOKEN || undefined,
+async function ensureMigrated() {
+  if (_migrated) return;
+  await migrate();
+  _migrated = true;
+}
+
+interface TursoRow {
+  cells: { type: string; value: string | number | null }[];
+}
+
+interface TursoResult {
+  columns: { name: string; decltype: string }[];
+  rows: TursoRow[];
+  affected_row_count: number;
+  last_insert_rowid: string | null;
+}
+
+interface TursoResponse {
+  results: {
+    type: string;
+    response: { type: string; result: TursoResult };
+  }[];
+}
+
+async function exec(sql: string, args: (string | number | null)[] = []): Promise<TursoResult> {
+  const url = process.env.TURSO_DATABASE_URL;
+  const token = process.env.TURSO_AUTH_TOKEN;
+  if (!url || !token) throw new Error("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set");
+
+  await ensureMigrated();
+
+  // Convert libsql:// URL to https://
+  const httpUrl = url.replace(/^libsql:\/\//, "https://");
+
+  const body = JSON.stringify({
+    requests: [
+      {
+        type: "execute",
+        stmt: {
+          sql,
+          args: args.map((a) =>
+            a === null
+              ? { type: "null" }
+              : typeof a === "number"
+              ? { type: "integer", value: String(a) }
+              : { type: "text", value: a }
+          ),
+        },
+      },
+      { type: "close" },
+    ],
   });
-  return _db;
+
+  const res = await fetch(`${httpUrl}/v2/pipeline`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Turso HTTP error: ${res.status} ${await res.text()}`);
+  }
+
+  const data = (await res.json()) as TursoResponse;
+  const result = data.results?.[0]?.response?.result;
+  if (!result) {
+    throw new Error("Unexpected Turso response format");
+  }
+  return result;
+}
+
+function rowsToObjects<T>(result: TursoResult): T[] {
+  return result.rows.map((row) => {
+    const obj: Record<string, unknown> = {};
+    result.columns.forEach((col, i) => {
+      const cell = row.cells[i];
+      obj[col.name] =
+        cell?.type === "null" || cell?.value == null
+          ? null
+          : cell.type === "integer"
+          ? Number(cell.value)
+          : cell.value;
+    });
+    return obj as T;
+  });
 }
 
 // ============================================================================
@@ -27,15 +107,16 @@ function getDb(): Client {
 // ============================================================================
 
 export async function migrate() {
-  const db = getDb();
-  await db.batch([
+  await exec(
     `CREATE TABLE IF NOT EXISTS competitors (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       name          TEXT    NOT NULL,
       url           TEXT    NOT NULL,
       category      TEXT,
       created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
-    )`,
+    )`
+  );
+  await exec(
     `CREATE TABLE IF NOT EXISTS snapshots (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       competitor_id   INTEGER NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
@@ -46,7 +127,9 @@ export async function migrate() {
       html            TEXT    NOT NULL DEFAULT '',
       signals         TEXT    NOT NULL DEFAULT '{}',
       content_hash    TEXT    NOT NULL DEFAULT ''
-    )`,
+    )`
+  );
+  await exec(
     `CREATE TABLE IF NOT EXISTS changes (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
       competitor_id      INTEGER NOT NULL REFERENCES competitors(id) ON DELETE CASCADE,
@@ -56,25 +139,24 @@ export async function migrate() {
       change_type        TEXT    NOT NULL,
       severity           TEXT    NOT NULL,
       fields             TEXT    NOT NULL DEFAULT '[]'
-    )`,
-    `CREATE INDEX IF NOT EXISTS idx_snapshots_competitor
-      ON snapshots(competitor_id, captured_at DESC)`,
-    `CREATE INDEX IF NOT EXISTS idx_changes_competitor
-      ON changes(competitor_id, detected_at DESC)`,
-  ]);
-}
-
-// Auto-migrate on first import (cold start).
-let _migrated = false;
-async function ensureMigrated() {
-  if (!_migrated) {
-    await migrate();
-    _migrated = true;
+    )`
+  );
+  try {
+    await exec(
+      `CREATE INDEX IF NOT EXISTS idx_snapshots_competitor
+        ON snapshots(competitor_id, captured_at DESC)`
+    );
+    await exec(
+      `CREATE INDEX IF NOT EXISTS idx_changes_competitor
+        ON changes(competitor_id, detected_at DESC)`
+    );
+  } catch {
+    // Indexes may already exist — ignore.
   }
 }
 
 // ============================================================================
-// Row types + mappers
+// Helpers
 // ============================================================================
 
 interface SnapshotRow {
@@ -140,24 +222,22 @@ export interface CompetitorRow {
 }
 
 export async function listCompetitors(): Promise<CompetitorRow[]> {
-  await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute(
+  if (!process.env.TURSO_DATABASE_URL) return [];
+  const r = await exec(
     `SELECT id, name, url, category, created_at
      FROM competitors ORDER BY created_at DESC`
   );
-  return result.rows as unknown as CompetitorRow[];
+  return rowsToObjects<CompetitorRow>(r);
 }
 
 export async function getCompetitor(id: number): Promise<CompetitorRow | undefined> {
-  await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT id, name, url, category, created_at
-          FROM competitors WHERE id = ?`,
-    args: [id],
-  });
-  return result.rows[0] as unknown as CompetitorRow | undefined;
+  if (!process.env.TURSO_DATABASE_URL) return undefined;
+  const r = await exec(
+    `SELECT id, name, url, category, created_at
+     FROM competitors WHERE id = ?`,
+    [id]
+  );
+  return rowsToObjects<CompetitorRow>(r)[0];
 }
 
 export async function createCompetitor(input: {
@@ -165,21 +245,15 @@ export async function createCompetitor(input: {
   url: string;
   category?: string | null;
 }): Promise<CompetitorRow> {
-  await ensureMigrated();
-  const db = getDb();
-  await db.execute({
-    sql: `INSERT INTO competitors (name, url, category) VALUES (?, ?, ?)`,
-    args: [input.name, input.url, input.category ?? null],
-  });
-  const result = await db.execute("SELECT last_insert_rowid() AS id");
-  const id = Number(result.rows[0].id);
-  return (await getCompetitor(id))!;
+  const r = await exec(
+    `INSERT INTO competitors (name, url, category) VALUES (?, ?, ?)`,
+    [input.name, input.url, input.category ?? null]
+  );
+  return (await getCompetitor(Number(r.last_insert_rowid)))!;
 }
 
 export async function deleteCompetitor(id: number): Promise<void> {
-  await ensureMigrated();
-  const db = getDb();
-  await db.execute({ sql: `DELETE FROM competitors WHERE id = ?`, args: [id] });
+  await exec(`DELETE FROM competitors WHERE id = ?`, [id]);
 }
 
 // ============================================================================
@@ -187,37 +261,31 @@ export async function deleteCompetitor(id: number): Promise<void> {
 // ============================================================================
 
 export async function listSnapshots(competitorId: number): Promise<Snapshot[]> {
-  await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT * FROM snapshots
-          WHERE competitor_id = ? ORDER BY captured_at DESC`,
-    args: [competitorId],
-  });
-  return (result.rows as unknown as SnapshotRow[]).map(mapSnapshot);
+  if (!process.env.TURSO_DATABASE_URL) return [];
+  const r = await exec(
+    `SELECT * FROM snapshots
+     WHERE competitor_id = ? ORDER BY captured_at DESC`,
+    [competitorId]
+  );
+  return rowsToObjects<SnapshotRow>(r).map(mapSnapshot);
 }
 
 export async function getSnapshot(id: number): Promise<Snapshot | undefined> {
-  await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT * FROM snapshots WHERE id = ?`,
-    args: [id],
-  });
-  const row = result.rows[0] as unknown as SnapshotRow | undefined;
+  if (!process.env.TURSO_DATABASE_URL) return undefined;
+  const r = await exec(`SELECT * FROM snapshots WHERE id = ?`, [id]);
+  const row = rowsToObjects<SnapshotRow>(r)[0];
   return row ? mapSnapshot(row) : undefined;
 }
 
 export async function getLatestSnapshot(competitorId: number): Promise<Snapshot | undefined> {
-  await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT * FROM snapshots
-          WHERE competitor_id = ? AND fetch_status = 'success'
-          ORDER BY captured_at DESC LIMIT 1`,
-    args: [competitorId],
-  });
-  const row = result.rows[0] as unknown as SnapshotRow | undefined;
+  if (!process.env.TURSO_DATABASE_URL) return undefined;
+  const r = await exec(
+    `SELECT * FROM snapshots
+     WHERE competitor_id = ? AND fetch_status = 'success'
+     ORDER BY captured_at DESC LIMIT 1`,
+    [competitorId]
+  );
+  const row = rowsToObjects<SnapshotRow>(r)[0];
   return row ? mapSnapshot(row) : undefined;
 }
 
@@ -230,13 +298,11 @@ export async function insertSnapshot(input: {
   signals: Signals;
   content_hash: string;
 }): Promise<number> {
-  await ensureMigrated();
-  const db = getDb();
-  await db.execute({
-    sql: `INSERT INTO snapshots
-           (competitor_id, status_code, capture_method, fetch_status, html, signals, content_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    args: [
+  const r = await exec(
+    `INSERT INTO snapshots
+       (competitor_id, status_code, capture_method, fetch_status, html, signals, content_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
       input.competitor_id,
       input.status_code,
       input.capture_method,
@@ -244,10 +310,9 @@ export async function insertSnapshot(input: {
       input.html,
       JSON.stringify(input.signals),
       input.content_hash,
-    ],
-  });
-  const result = await db.execute("SELECT last_insert_rowid() AS id");
-  return Number(result.rows[0].id);
+    ]
+  );
+  return Number(r.last_insert_rowid);
 }
 
 // ============================================================================
@@ -255,57 +320,46 @@ export async function insertSnapshot(input: {
 // ============================================================================
 
 export async function listChanges(competitorId: number): Promise<Change[]> {
-  await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT * FROM changes
-          WHERE competitor_id = ? ORDER BY detected_at DESC`,
-    args: [competitorId],
-  });
-  return (result.rows as unknown as ChangeRow[]).map(mapChange);
+  if (!process.env.TURSO_DATABASE_URL) return [];
+  const r = await exec(
+    `SELECT * FROM changes
+     WHERE competitor_id = ? ORDER BY detected_at DESC`,
+    [competitorId]
+  );
+  return rowsToObjects<ChangeRow>(r).map(mapChange);
 }
 
 export async function listRecentChanges(limit = 20): Promise<(Change & {
   competitor_name: string;
   competitor_url: string;
 })[]> {
-  await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT c.*, comp.name AS competitor_name, comp.url AS competitor_url
-          FROM changes c
-          JOIN competitors comp ON comp.id = c.competitor_id
-          ORDER BY c.detected_at DESC
-          LIMIT ?`,
-    args: [limit],
-  });
-  return (result.rows as unknown as (ChangeRow & {
-    competitor_name: string;
-    competitor_url: string;
-  })[]).map((r) => ({
-    ...mapChange(r),
-    competitor_name: r.competitor_name,
-    competitor_url: r.competitor_url,
-  }));
+  if (!process.env.TURSO_DATABASE_URL) return [];
+  const r = await exec(
+    `SELECT c.*, comp.name AS competitor_name, comp.url AS competitor_url
+     FROM changes c
+     JOIN competitors comp ON comp.id = c.competitor_id
+     ORDER BY c.detected_at DESC
+     LIMIT ?`,
+    [limit]
+  );
+  return rowsToObjects<ChangeRow & { competitor_name: string; competitor_url: string }>(r).map(
+    (r) => ({ ...mapChange(r), competitor_name: r.competitor_name, competitor_url: r.competitor_url })
+  );
 }
 
 export async function getChange(id: number): Promise<(Change & {
   competitor_name: string;
   competitor_url: string;
 }) | undefined> {
-  await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute({
-    sql: `SELECT c.*, comp.name AS competitor_name, comp.url AS competitor_url
-          FROM changes c
-          JOIN competitors comp ON comp.id = c.competitor_id
-          WHERE c.id = ?`,
-    args: [id],
-  });
-  const row = result.rows[0] as unknown as (ChangeRow & {
-    competitor_name: string;
-    competitor_url: string;
-  }) | undefined;
+  if (!process.env.TURSO_DATABASE_URL) return undefined;
+  const r = await exec(
+    `SELECT c.*, comp.name AS competitor_name, comp.url AS competitor_url
+     FROM changes c
+     JOIN competitors comp ON comp.id = c.competitor_id
+     WHERE c.id = ?`,
+    [id]
+  );
+  const row = rowsToObjects<ChangeRow & { competitor_name: string; competitor_url: string }>(r)[0];
   return row
     ? { ...mapChange(row), competitor_name: row.competitor_name, competitor_url: row.competitor_url }
     : undefined;
@@ -319,23 +373,20 @@ export async function insertChange(input: {
   severity: Change["severity"];
   fields: Change["fields"];
 }): Promise<number> {
-  await ensureMigrated();
-  const db = getDb();
-  await db.execute({
-    sql: `INSERT INTO changes
-           (competitor_id, from_snapshot_id, to_snapshot_id, change_type, severity, fields)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [
+  const r = await exec(
+    `INSERT INTO changes
+       (competitor_id, from_snapshot_id, to_snapshot_id, change_type, severity, fields)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
       input.competitor_id,
       input.from_snapshot_id,
       input.to_snapshot_id,
       input.change_type,
       input.severity,
       JSON.stringify(input.fields),
-    ],
-  });
-  const result = await db.execute("SELECT last_insert_rowid() AS id");
-  return Number(result.rows[0].id);
+    ]
+  );
+  return Number(r.last_insert_rowid);
 }
 
 // ============================================================================
@@ -347,17 +398,11 @@ export async function getCounts(): Promise<{
   snapshots: number;
   changes: number;
 }> {
-  await ensureMigrated();
-  const db = getDb();
-  const result = await db.execute(
+  if (!process.env.TURSO_DATABASE_URL) return { competitors: 0, snapshots: 0, changes: 0 };
+  const r = await exec(
     `SELECT (SELECT COUNT(*) FROM competitors) AS competitors,
             (SELECT COUNT(*) FROM snapshots)   AS snapshots,
             (SELECT COUNT(*) FROM changes)     AS changes`
   );
-  const row = result.rows[0];
-  return {
-    competitors: Number(row.competitors),
-    snapshots: Number(row.snapshots),
-    changes: Number(row.changes),
-  };
+  return rowsToObjects<{ competitors: number; snapshots: number; changes: number }>(r)[0];
 }
