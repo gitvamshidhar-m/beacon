@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Eye } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, Sparkles } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -15,6 +15,7 @@ import {
 } from "@/components/SeverityBadge";
 import { VisualDiff } from "@/components/VisualDiff";
 import { FieldDiffList } from "@/components/FieldDiffList";
+import { AiSummary } from "@/components/AiSummary";
 import { getChange, getSnapshot, listChanges } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 
@@ -93,6 +94,20 @@ export default async function ChangeDetailPage({
       </div>
 
       <div className="space-y-6">
+        {/* AI Summary */}
+        {process.env.GROQ_API_KEY && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Sparkles className="h-4 w-4 text-primary" /> AI Summary
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AiSummary changeId={changeId} />
+            </CardContent>
+          </Card>
+        )}
+
         {/* 1. Field-level structured diffs */}
         <Card>
           <CardHeader>

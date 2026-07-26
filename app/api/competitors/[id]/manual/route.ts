@@ -14,6 +14,7 @@ import {
   formatChangeNotification,
   shouldNotify,
 } from "@/lib/notifications";
+import { summarizeChange } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,12 @@ export async function POST(request: Request, { params }: Params) {
       if (shouldNotify(change.change_type, change.severity, relevant)) {
         const webhook = process.env.SLACK_WEBHOOK_URL;
         if (webhook) {
+          let summary = "";
+          if (process.env.GROQ_API_KEY) {
+            try {
+              summary = await summarizeChange(change);
+            } catch {}
+          }
           const msg = formatChangeNotification({
             competitor_name: competitor.name,
             competitor_url: competitor.url,
@@ -104,7 +111,7 @@ export async function POST(request: Request, { params }: Params) {
             severity: change.severity,
             detected_at: new Date().toISOString(),
             fields: change.fields,
-          });
+          }) + (summary ? `\n   🤖 ${summary}` : "");
           await sendSlackNotification(webhook, msg);
         }
       }

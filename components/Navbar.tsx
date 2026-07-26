@@ -9,6 +9,7 @@ import {
   Sword,
   Search,
   Bell,
+  Sparkles,
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ const navItems = [
   { href: "/timeline", label: "Timeline", icon: History },
   { href: "/battle-card", label: "Battle Card", icon: Sword },
   { href: "/gaps", label: "Gaps", icon: Search },
+  { href: "/insights", label: "Insights", icon: Sparkles },
   { href: "/settings/alerts", label: "Alerts", icon: Bell },
 ];
 
