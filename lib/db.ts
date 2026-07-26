@@ -230,8 +230,7 @@ export interface CompetitorRow {
 export async function listCompetitors(): Promise<CompetitorRow[]> {
   if (!process.env.TURSO_DATABASE_URL) return [];
   const r = await exec(
-    `SELECT id, name, url, category, created_at
-     FROM competitors ORDER BY created_at DESC`
+    "SELECT id, name, url, category, created_at FROM competitors ORDER BY created_at DESC"
   );
   return rowsToObjects<CompetitorRow>(r);
 }
