@@ -1,15 +1,20 @@
 import { NextResponse } from "next/server";
+import {
+  listCompetitors,
+  getLatestSnapshot,
+  insertSnapshot,
+  insertChange,
+} from "@/lib/db";
+import { fetchPage } from "@/lib/fetcher";
+import { extractSignals, hashSignals } from "@/lib/signals";
+import { diffSnapshots } from "@/lib/differ";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { listCompetitors, getLatestSnapshot, insertSnapshot, insertChange } = await import("@/lib/db");
-    const { fetchPage } = await import("@/lib/fetcher");
-    const { extractSignals, hashSignals } = await import("@/lib/signals");
-    const { diffSnapshots } = await import("@/lib/differ");
-
     const competitors = await listCompetitors();
+
     const results: {
       id: number;
       name: string;
@@ -23,7 +28,11 @@ export async function GET() {
 
         const result = await fetchPage(comp.url);
         if (result.status !== "success") {
-          results.push({ id: comp.id, name: comp.name, status: result.status });
+          results.push({
+            id: comp.id,
+            name: comp.name,
+            status: result.status,
+          });
           continue;
         }
 
@@ -59,14 +68,31 @@ export async function GET() {
           }
         }
 
-        results.push({ id: comp.id, name: comp.name, status: "success", changed });
+        results.push({
+          id: comp.id,
+          name: comp.name,
+          status: "success",
+          changed,
+        });
       } catch (e) {
-        results.push({ id: comp.id, name: comp.name, status: "error", changed: false });
+        results.push({
+          id: comp.id,
+          name: comp.name,
+          status: "error",
+          changed: false,
+        });
       }
     }
 
-    return NextResponse.json({ done: true, total: competitors.length, results });
+    return NextResponse.json({
+      done: true,
+      total: competitors.length,
+      results,
+    });
   } catch (err) {
-    return NextResponse.json({ error: String(err), stack: (err as Error).stack }, { status: 500 });
+    return NextResponse.json(
+      { error: String(err), stack: (err as Error).stack },
+      { status: 500 }
+    );
   }
 }
