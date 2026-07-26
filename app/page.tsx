@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Radar as RadarIcon, Users, Camera, AlertTriangle } from "lucide-react";
 import {
@@ -12,19 +15,53 @@ import {
   ChangeTypeBadge,
   SeverityBadge,
 } from "@/components/SeverityBadge";
-import {
-  listCompetitors,
-  listRecentChanges,
-  getCounts,
-} from "@/lib/db";
 import { timeAgo } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
+interface Competitor {
+  id: number;
+  name: string;
+  url: string;
+  category: string | null;
+  created_at: string;
+}
 
-export default async function DashboardPage() {
-  const counts = await getCounts().catch(() => ({ competitors: 0, snapshots: 0, changes: 0 }));
-  const competitors = await listCompetitors().catch(() => []);
-  const changes = await listRecentChanges(10).catch(() => []);
+interface Change {
+  id: number;
+  competitor_id: number;
+  competitor_name: string;
+  competitor_url: string;
+  change_type: string;
+  severity: string;
+  detected_at: string;
+  fields: { label: string; type: string }[];
+}
+
+export default function DashboardPage() {
+  const [counts, setCounts] = useState({ competitors: 0, snapshots: 0, changes: 0 });
+  const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [changes, setChanges] = useState<Change[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/stats").then((r) => r.json()),
+      fetch("/api/competitors").then((r) => r.json()),
+      fetch("/api/changes?limit=10").then((r) => r.json()),
+    ]).then(([c, comp, ch]) => {
+      setCounts(c);
+      setCompetitors(comp.competitors);
+      setChanges(ch.changes);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="container py-8">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="container py-8">
@@ -163,8 +200,8 @@ export default async function DashboardPage() {
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <ChangeTypeBadge type={ch.change_type} />
-                        <SeverityBadge severity={ch.severity} />
+                        <ChangeTypeBadge type={ch.change_type as any} />
+                        <SeverityBadge severity={ch.severity as any} />
                         <span className="text-xs text-muted-foreground">
                           {ch.fields.length} field{ch.fields.length === 1 ? "" : "s"} changed
                         </span>
