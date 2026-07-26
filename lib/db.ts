@@ -405,10 +405,14 @@ export async function getCounts(): Promise<{
   changes: number;
 }> {
   if (!process.env.TURSO_DATABASE_URL) return { competitors: 0, snapshots: 0, changes: 0 };
-  const r = await exec(
-    `SELECT (SELECT COUNT(*) FROM competitors) AS competitors,
-            (SELECT COUNT(*) FROM snapshots)   AS snapshots,
-            (SELECT COUNT(*) FROM changes)     AS changes`
-  );
-  return rowsToObjects<{ competitors: number; snapshots: number; changes: number }>(r)[0];
+  const [comp, snap, ch] = await Promise.all([
+    exec("SELECT COUNT(*) AS c FROM competitors"),
+    exec("SELECT COUNT(*) AS c FROM snapshots"),
+    exec("SELECT COUNT(*) AS c FROM changes"),
+  ]);
+  return {
+    competitors: rowsToObjects<{ c: number }>(comp)[0]?.c ?? 0,
+    snapshots: rowsToObjects<{ c: number }>(snap)[0]?.c ?? 0,
+    changes: rowsToObjects<{ c: number }>(ch)[0]?.c ?? 0,
+  };
 }
