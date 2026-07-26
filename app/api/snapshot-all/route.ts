@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import {
   listCompetitors,
-  getCounts,
   getLatestSnapshot,
   insertSnapshot,
   insertChange,
@@ -13,36 +12,49 @@ import { diffSnapshots } from "@/lib/differ";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  try {
-    const counts = await getCounts();
-    const competitors = await listCompetitors();
+  const counts = await import("@/lib/db").then((m) => m.getCounts());
+  const competitors = await listCompetitors();
 
-    const results: {
-      id: number;
-      name: string;
-      status: string;
-      changed?: boolean;
-    }[] = [];
+  const results: {
+    id: number;
+    name: string;
+    status: string;
+    changed?: boolean;
+  }[] = [];
 
-    for (const comp of competitors) {
-      try {
-        const priorSnapshot = await getLatestSnapshot(comp.id);
+  for (const comp of competitors) {
+    try {
+      const priorSnapshot = await getLatestSnapshot(comp.id);
 
-        const result = await fetchPage(comp.url);
-        if (result.status !== "success") {
-          results.push({
-            id: comp.id,
-            name: comp.name,
-            status: result.status,
-          });
-          continue;
-        }
+      const result = await fetchPage(comp.url);
+      if (result.status !== "success") {
+        results.push({
+          id: comp.id,
+          name: comp.name,
+          status: result.status,
+        });
+        continue;
+      }
 
-        const signals = extractSignals(result.html);
-        const contentHash = hashSignals(signals);
+      const signals = extractSignals(result.html);
+      const contentHash = hashSignals(signals);
 
-        const snapshotId = await insertSnapshot({
+      const snapshotId = await insertSnapshot({
+        competitor_id: comp.id,
+        status_code: result.statusCode,
+        capture_method: "auto",
+        fetch_status: "success",
+        html: result.html,
+        signals,
+        content_hash: contentHash,
+      });
+
+      let changed = false;
+      if (priorSnapshot) {
+        const candidate = diffSnapshots(priorSnapshot, {
+          id: snapshotId,
           competitor_id: comp.id,
+          captured_at: new Date().toISOString(),
           status_code: result.statusCode,
           capture_method: "auto",
           fetch_status: "success",
@@ -50,52 +62,32 @@ export async function GET() {
           signals,
           content_hash: contentHash,
         });
-
-        let changed = false;
-        if (priorSnapshot) {
-          const candidate = diffSnapshots(priorSnapshot, {
-            id: snapshotId,
-            competitor_id: comp.id,
-            captured_at: new Date().toISOString(),
-            status_code: result.statusCode,
-            capture_method: "auto",
-            fetch_status: "success",
-            html: result.html,
-            signals,
-            content_hash: contentHash,
-          });
-          if (candidate) {
-            await insertChange(candidate);
-            changed = true;
-          }
+        if (candidate) {
+          await insertChange(candidate);
+          changed = true;
         }
-
-        results.push({
-          id: comp.id,
-          name: comp.name,
-          status: "success",
-          changed,
-        });
-      } catch (e) {
-        results.push({
-          id: comp.id,
-          name: comp.name,
-          status: "error",
-          changed: false,
-        });
       }
-    }
 
-    return NextResponse.json({
-      done: true,
-      total: competitors.length,
-      counts,
-      results,
-    });
-  } catch (err) {
-    return NextResponse.json(
-      { error: String(err), stack: (err as Error).stack },
-      { status: 500 }
-    );
+      results.push({
+        id: comp.id,
+        name: comp.name,
+        status: "success",
+        changed,
+      });
+    } catch (e) {
+      results.push({
+        id: comp.id,
+        name: comp.name,
+        status: "error",
+        changed: false,
+      });
+    }
   }
+
+  return NextResponse.json({
+    done: true,
+    total: competitors.length,
+    counts,
+    results,
+  });
 }
