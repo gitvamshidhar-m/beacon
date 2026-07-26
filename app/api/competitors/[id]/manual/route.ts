@@ -4,10 +4,16 @@ import {
   getLatestSnapshot,
   insertSnapshot,
   insertChange,
+  listAlertRules,
 } from "@/lib/db";
 import { fromHtml } from "@/lib/fetcher";
 import { extractSignals, hashSignals } from "@/lib/signals";
 import { diffSnapshots } from "@/lib/differ";
+import {
+  sendSlackNotification,
+  formatChangeNotification,
+  shouldNotify,
+} from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -82,13 +88,37 @@ export async function POST(request: Request, { params }: Params) {
     }
   }
 
+  if (change) {
+    try {
+      const rules = await listAlertRules();
+      const relevant = rules.filter(
+        (r) => !r.competitor_id || r.competitor_id === id
+      );
+      if (shouldNotify(change.change_type, change.severity, relevant)) {
+        const webhook = process.env.SLACK_WEBHOOK_URL;
+        if (webhook) {
+          const msg = formatChangeNotification({
+            competitor_name: competitor.name,
+            competitor_url: competitor.url,
+            change_type: change.change_type,
+            severity: change.severity,
+            detected_at: new Date().toISOString(),
+            fields: change.fields,
+          });
+          await sendSlackNotification(webhook, msg);
+        }
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
   return NextResponse.json({
     status: "success",
     snapshot_id: snapshotId,
     content_hash: contentHash,
     changed: !!change,
     change,
-    // Surface any "this looks like a challenge page" warning from fromHtml.
     warning: result.message,
   });
 }

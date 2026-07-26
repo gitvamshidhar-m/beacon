@@ -1,8 +1,30 @@
+"use client";
+
 import Link from "next/link";
-import { Radar } from "lucide-react";
+import { usePathname } from "next/navigation";
+import {
+  Radar,
+  LayoutDashboard,
+  History,
+  Sword,
+  Search,
+  Bell,
+  Plus,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+const navItems = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/timeline", label: "Timeline", icon: History },
+  { href: "/battle-card", label: "Battle Card", icon: Sword },
+  { href: "/gaps", label: "Gaps", icon: Search },
+  { href: "/settings/alerts", label: "Alerts", icon: Bell },
+];
 
 export function Navbar() {
+  const path = usePathname();
+
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between">
@@ -18,12 +40,32 @@ export function Navbar() {
           </div>
         </Link>
 
-        <nav className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/">Dashboard</Link>
-          </Button>
-          <Button asChild size="sm">
-            <Link href="/competitors/new">Add competitor</Link>
+        <nav className="hidden items-center gap-1 md:flex">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = path === item.href;
+            return (
+              <Button
+                key={item.href}
+                asChild
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "gap-1.5",
+                  isActive && "bg-accent text-accent-foreground"
+                )}
+              >
+                <Link href={item.href}>
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              </Button>
+            );
+          })}
+          <Button asChild size="sm" className="ml-2 gap-1.5">
+            <Link href="/competitors/new">
+              <Plus className="h-4 w-4" /> Add
+            </Link>
           </Button>
         </nav>
       </div>

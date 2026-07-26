@@ -159,6 +159,19 @@ export async function migrate() {
   } catch {
     // Indexes may already exist — ignore.
   }
+
+  // Alert rules for notification subscriptions
+  await exec(
+    `CREATE TABLE IF NOT EXISTS alert_rules (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      competitor_id   INTEGER REFERENCES competitors(id) ON DELETE CASCADE,
+      change_type     TEXT    NOT NULL DEFAULT '*',
+      severity        TEXT    NOT NULL DEFAULT 'medium',
+      channel         TEXT    NOT NULL DEFAULT 'slack',
+      enabled         INTEGER NOT NULL DEFAULT 1,
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+    )`
+  );
 }
 
 // ============================================================================
@@ -229,10 +242,35 @@ export interface CompetitorRow {
 
 export async function listCompetitors(): Promise<CompetitorRow[]> {
   if (!process.env.TURSO_DATABASE_URL) return [];
-  const r = await exec(
+  const r = await execDirect(
     "SELECT id, name, url, category, created_at FROM competitors ORDER BY created_at DESC"
   );
   return rowsToObjects<CompetitorRow>(r);
+}
+
+/** Direct Turso call that bypasses ensureMigrated() — avoids a pipeline
+ *  interaction bug on Vercel cold starts where migration calls interfere
+ *  with subsequent SELECT queries. */
+async function execDirect(sql: string): Promise<TursoResult> {
+  const url = process.env.TURSO_DATABASE_URL!;
+  const token = process.env.TURSO_AUTH_TOKEN!;
+  if (!url || !token) throw new Error("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set");
+  const httpUrl = url.replace(/^libsql:\/\//, "https://");
+  const res = await fetch(`${httpUrl}/v2/pipeline`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requests: [
+        { type: "execute", stmt: { sql, args: [] } },
+        { type: "close" },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`Turso error: ${res.status} ${await res.text()}`);
+  const data = await res.json();
+  const result = data.results?.[0]?.response?.result;
+  if (!result) throw new Error("Unexpected Turso response");
+  return result as TursoResult;
 }
 
 export async function getCompetitor(id: number): Promise<CompetitorRow | undefined> {
@@ -393,6 +431,149 @@ export async function insertChange(input: {
     ]
   );
   return Number(r.last_insert_rowid);
+}
+
+// ============================================================================
+// Alert rules
+// ============================================================================
+
+export interface AlertRule {
+  id: number;
+  competitor_id: number | null;
+  change_type: string;
+  severity: string;
+  channel: string;
+  enabled: number;
+  created_at: string;
+  competitor_name?: string;
+}
+
+export async function listAlertRules(): Promise<AlertRule[]> {
+  if (!process.env.TURSO_DATABASE_URL) return [];
+  const r = await exec(
+    `SELECT r.*, c.name AS competitor_name
+     FROM alert_rules r
+     LEFT JOIN competitors c ON c.id = r.competitor_id
+     ORDER BY r.created_at DESC`
+  );
+  return rowsToObjects<AlertRule>(r);
+}
+
+export async function getAlertRule(id: number): Promise<AlertRule | undefined> {
+  if (!process.env.TURSO_DATABASE_URL) return undefined;
+  const r = await exec(`SELECT * FROM alert_rules WHERE id = ?`, [id]);
+  return rowsToObjects<AlertRule>(r)[0];
+}
+
+export async function upsertAlertRule(input: {
+  id?: number;
+  competitor_id: number | null;
+  change_type: string;
+  severity: string;
+  channel: string;
+  enabled: number;
+}): Promise<number> {
+  if (!process.env.TURSO_DATABASE_URL) throw new Error("No database configured");
+  if (input.id) {
+    await exec(
+      `UPDATE alert_rules SET competitor_id=?, change_type=?, severity=?, channel=?, enabled=? WHERE id=?`,
+      [input.competitor_id, input.change_type, input.severity, input.channel, input.enabled, input.id]
+    );
+    return input.id;
+  }
+  const r = await exec(
+    `INSERT INTO alert_rules (competitor_id, change_type, severity, channel, enabled)
+     VALUES (?, ?, ?, ?, ?)`,
+    [input.competitor_id, input.change_type, input.severity, input.channel, input.enabled]
+  );
+  return Number(r.last_insert_rowid);
+}
+
+export async function deleteAlertRule(id: number): Promise<void> {
+  await exec(`DELETE FROM alert_rules WHERE id = ?`, [id]);
+}
+
+// ============================================================================
+// Monthly trend report
+// ============================================================================
+
+export async function getMonthlyReport(): Promise<{
+  month: string;
+  total_changes: number;
+  by_type: Record<string, number>;
+  by_severity: Record<string, number>;
+  by_competitor: { name: string; count: number }[];
+}[]> {
+  if (!process.env.TURSO_DATABASE_URL) return [];
+  const r = await exec(
+    `SELECT
+       strftime('%Y-%m', detected_at) AS month,
+       change_type,
+       severity,
+       c.name AS comp_name
+     FROM changes ch
+     JOIN competitors c ON c.id = ch.competitor_id
+     WHERE detected_at >= datetime('now', '-6 months')
+     ORDER BY month DESC`
+  );
+  const rows = rowsToObjects<{ month: string; change_type: string; severity: string; comp_name: string }>(r);
+  const map = new Map<string, { month: string; total_changes: number; by_type: Record<string, number>; by_severity: Record<string, number>; by_competitor: Map<string, number> }>();
+  for (const row of rows) {
+    if (!map.has(row.month)) map.set(row.month, { month: row.month, total_changes: 0, by_type: {}, by_severity: {}, by_competitor: new Map() });
+    const m = map.get(row.month)!;
+    m.total_changes++;
+    m.by_type[row.change_type] = (m.by_type[row.change_type] || 0) + 1;
+    m.by_severity[row.severity] = (m.by_severity[row.severity] || 0) + 1;
+    m.by_competitor.set(row.comp_name, (m.by_competitor.get(row.comp_name) || 0) + 1);
+  }
+  return Array.from(map.values()).map((m) => ({
+    ...m,
+    by_competitor: Array.from(m.by_competitor.entries()).map(([name, count]) => ({ name, count })),
+  }));
+}
+
+// ============================================================================
+// Content gap analysis
+// ============================================================================
+
+export async function getGapAnalysis(): Promise<{
+  field: string;
+  label: string;
+  coverage: { competitor_name: string; present: boolean; value: string }[];
+}[]> {
+  if (!process.env.TURSO_DATABASE_URL) return [];
+  const comps = await listCompetitors();
+  const fields = ["seoTitle", "headline", "pricing", "features", "ctas"] as const;
+  const fieldLabels: Record<string, string> = { seoTitle: "SEO Title", headline: "Headline", pricing: "Pricing", features: "Features", ctas: "CTAs" };
+
+  const result: { field: string; label: string; coverage: { competitor_name: string; present: boolean; value: string }[] }[] = [];
+
+  for (const field of fields) {
+    const coverage: { competitor_name: string; present: boolean; value: string }[] = [];
+    for (const comp of comps) {
+      const r = await execDirect(
+        `SELECT signals FROM snapshots
+         WHERE competitor_id = ${comp.id} AND fetch_status = 'success'
+         ORDER BY captured_at DESC LIMIT 1`
+      );
+      const row = rowsToObjects<{ signals: string }>(r)[0];
+      let present = false;
+      let value = "";
+      if (row) {
+        try {
+          const signals = JSON.parse(row.signals);
+          const v = signals[field];
+          if (v) {
+            present = true;
+            value = Array.isArray(v) ? v.slice(0, 3).join(", ") : String(v).slice(0, 80);
+          }
+        } catch {}
+      }
+      coverage.push({ competitor_name: comp.name, present, value });
+    }
+    result.push({ field, label: fieldLabels[field] || field, coverage });
+  }
+  return result;
 }
 
 // ============================================================================
