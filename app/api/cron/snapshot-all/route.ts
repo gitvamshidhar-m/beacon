@@ -1,44 +1,37 @@
 import { NextResponse } from "next/server";
-import { listCompetitors, getLatestSnapshot, insertSnapshot, insertChange } from "@/lib/db";
-import { fetchPage } from "@/lib/fetcher";
-import { extractSignals, hashSignals } from "@/lib/signals";
-import { diffSnapshots } from "@/lib/differ";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const competitors = await listCompetitors();
-  const results: { id: number; name: string; status: string; changed?: boolean }[] = [];
+  try {
+    const { listCompetitors, getLatestSnapshot, insertSnapshot, insertChange } = await import("@/lib/db");
+    const { fetchPage } = await import("@/lib/fetcher");
+    const { extractSignals, hashSignals } = await import("@/lib/signals");
+    const { diffSnapshots } = await import("@/lib/differ");
 
-  for (const comp of competitors) {
-    try {
-      const priorSnapshot = await getLatestSnapshot(comp.id);
+    const competitors = await listCompetitors();
+    const results: {
+      id: number;
+      name: string;
+      status: string;
+      changed?: boolean;
+    }[] = [];
 
-      const result = await fetchPage(comp.url);
-      if (result.status !== "success") {
-        results.push({ id: comp.id, name: comp.name, status: result.status });
-        continue;
-      }
+    for (const comp of competitors) {
+      try {
+        const priorSnapshot = await getLatestSnapshot(comp.id);
 
-      const signals = extractSignals(result.html);
-      const contentHash = hashSignals(signals);
+        const result = await fetchPage(comp.url);
+        if (result.status !== "success") {
+          results.push({ id: comp.id, name: comp.name, status: result.status });
+          continue;
+        }
 
-      const snapshotId = await insertSnapshot({
-        competitor_id: comp.id,
-        status_code: result.statusCode,
-        capture_method: "auto",
-        fetch_status: "success",
-        html: result.html,
-        signals,
-        content_hash: contentHash,
-      });
+        const signals = extractSignals(result.html);
+        const contentHash = hashSignals(signals);
 
-      let changed = false;
-      if (priorSnapshot) {
-        const candidate = diffSnapshots(priorSnapshot, {
-          id: snapshotId,
+        const snapshotId = await insertSnapshot({
           competitor_id: comp.id,
-          captured_at: new Date().toISOString(),
           status_code: result.statusCode,
           capture_method: "auto",
           fetch_status: "success",
@@ -46,21 +39,34 @@ export async function GET() {
           signals,
           content_hash: contentHash,
         });
-        if (candidate) {
-          await insertChange(candidate);
-          changed = true;
+
+        let changed = false;
+        if (priorSnapshot) {
+          const candidate = diffSnapshots(priorSnapshot, {
+            id: snapshotId,
+            competitor_id: comp.id,
+            captured_at: new Date().toISOString(),
+            status_code: result.statusCode,
+            capture_method: "auto",
+            fetch_status: "success",
+            html: result.html,
+            signals,
+            content_hash: contentHash,
+          });
+          if (candidate) {
+            await insertChange(candidate);
+            changed = true;
+          }
         }
+
+        results.push({ id: comp.id, name: comp.name, status: "success", changed });
+      } catch (e) {
+        results.push({ id: comp.id, name: comp.name, status: "error", changed: false });
       }
-
-      results.push({ id: comp.id, name: comp.name, status: "success", changed });
-    } catch (e) {
-      results.push({ id: comp.id, name: comp.name, status: "error", changed: false });
     }
-  }
 
-  return NextResponse.json({
-    done: true,
-    total: competitors.length,
-    results,
-  });
+    return NextResponse.json({ done: true, total: competitors.length, results });
+  } catch (err) {
+    return NextResponse.json({ error: String(err), stack: (err as Error).stack }, { status: 500 });
+  }
 }
