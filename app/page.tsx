@@ -17,24 +17,8 @@ import {
 } from "@/components/SeverityBadge";
 import { timeAgo } from "@/lib/utils";
 
-interface Competitor {
-  id: number;
-  name: string;
-  url: string;
-  category: string | null;
-  created_at: string;
-}
-
-interface Change {
-  id: number;
-  competitor_id: number;
-  competitor_name: string;
-  competitor_url: string;
-  change_type: string;
-  severity: string;
-  detected_at: string;
-  fields: { label: string; type: string }[];
-}
+interface Competitor { id: number; name: string; url: string; category: string | null; created_at: string; }
+interface Change { id: number; competitor_id: number; competitor_name: string; competitor_url: string; change_type: string; severity: string; detected_at: string; fields: { label: string; type: string }[]; }
 
 export default function DashboardPage() {
   const [counts, setCounts] = useState({ competitors: 0, snapshots: 0, changes: 0 });
@@ -43,16 +27,19 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/stats").then((r) => r.json()),
-      fetch("/api/competitors").then((r) => r.json()),
-      fetch("/api/changes?limit=10").then((r) => r.json()),
-    ]).then(([c, comp, ch]) => {
-      setCounts(c);
-      setCompetitors(comp.competitors);
-      setChanges(ch.changes);
-      setLoading(false);
-    });
+    fetch("/api/competitors")
+      .then((r) => r.json())
+      .then((d: { competitors: Competitor[] }) => {
+        setCompetitors(d.competitors);
+        setCounts((p) => ({ ...p, competitors: d.competitors.length }));
+        return fetch("/api/changes?limit=10");
+      })
+      .then((r) => r.json())
+      .then((d: { changes: Change[] }) => {
+        setChanges(d.changes);
+        setCounts((p) => ({ ...p, changes: d.changes.length }));
+        setLoading(false);
+      });
   }, []);
 
   if (loading) {
