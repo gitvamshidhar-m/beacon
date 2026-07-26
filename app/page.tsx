@@ -12,44 +12,19 @@ import {
   ChangeTypeBadge,
   SeverityBadge,
 } from "@/components/SeverityBadge";
+import {
+  listCompetitors,
+  listRecentChanges,
+  getCounts,
+} from "@/lib/db";
 import { timeAgo } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-interface Competitor {
-  id: number;
-  name: string;
-  url: string;
-  category: string | null;
-  created_at: string;
-}
-
-interface Change {
-  id: number;
-  competitor_id: number;
-  competitor_name: string;
-  competitor_url: string;
-  change_type: string;
-  severity: string;
-  detected_at: string;
-  fields: { label: string; type: string }[];
-}
-
-async function fetchJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-  return res.json();
-}
-
 export default async function DashboardPage() {
-  const [counts, compData, changesData] = await Promise.all([
-    fetchJSON<{ competitors: number; snapshots: number; changes: number }>("/api/stats"),
-    fetchJSON<{ competitors: Competitor[] }>("/api/competitors"),
-    fetchJSON<{ changes: Change[] }>("/api/changes?limit=10"),
-  ]);
-
-  const competitors = compData.competitors;
-  const changes = changesData.changes;
+  const counts = await getCounts().catch(() => ({ competitors: 0, snapshots: 0, changes: 0 }));
+  const competitors = await listCompetitors().catch(() => []);
+  const changes = await listRecentChanges(10).catch(() => []);
 
   return (
     <div className="container py-8">
@@ -188,8 +163,8 @@ export default async function DashboardPage() {
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <ChangeTypeBadge type={ch.change_type as any} />
-                        <SeverityBadge severity={ch.severity as any} />
+                        <ChangeTypeBadge type={ch.change_type} />
+                        <SeverityBadge severity={ch.severity} />
                         <span className="text-xs text-muted-foreground">
                           {ch.fields.length} field{ch.fields.length === 1 ? "" : "s"} changed
                         </span>
