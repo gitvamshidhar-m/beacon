@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   listCompetitors,
+  getCounts,
   getLatestSnapshot,
   insertSnapshot,
   insertChange,
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const counts = await getCounts();
     const competitors = await listCompetitors();
 
     const results: {
@@ -87,6 +89,7 @@ export async function GET() {
     return NextResponse.json({
       done: true,
       total: competitors.length,
+      counts,
       results,
     });
   } catch (err) {
