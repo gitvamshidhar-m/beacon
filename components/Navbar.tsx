@@ -14,6 +14,7 @@ import {
   Zap,
   TrendingUp,
   FileText,
+  Shield,
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/reaction-tracker", label: "Reactions", icon: Zap },
   { href: "/positioning-drift", label: "Drift", icon: TrendingUp },
   { href: "/brief", label: "Brief", icon: FileText },
+  { href: "/intelligence", label: "Intel", icon: Shield },
   { href: "/insights", label: "Insights", icon: Sparkles },
   { href: "/settings/alerts", label: "Alerts", icon: Bell },
 ];
