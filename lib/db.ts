@@ -306,8 +306,7 @@ export async function deleteCompetitor(id: number): Promise<void> {
 export async function listSnapshots(competitorId: number): Promise<Snapshot[]> {
   if (!process.env.TURSO_DATABASE_URL) return [];
   const id = Number(competitorId);
-  // Inline the id to avoid Turso integer parameter binding issues
-  const r = await exec(
+  const r = await execDirect(
     `SELECT * FROM snapshots
      WHERE competitor_id = ${id} ORDER BY captured_at DESC`
   );
@@ -324,7 +323,7 @@ export async function getSnapshot(id: number): Promise<Snapshot | undefined> {
 export async function getLatestSnapshot(competitorId: number): Promise<Snapshot | undefined> {
   if (!process.env.TURSO_DATABASE_URL) return undefined;
   const id = Number(competitorId);
-  const r = await exec(
+  const r = await execDirect(
     `SELECT * FROM snapshots
      WHERE competitor_id = ${id} AND fetch_status = 'success'
      ORDER BY captured_at DESC LIMIT 1`
@@ -366,7 +365,7 @@ export async function insertSnapshot(input: {
 export async function listChanges(competitorId: number): Promise<Change[]> {
   if (!process.env.TURSO_DATABASE_URL) return [];
   const id = Number(competitorId);
-  const r = await exec(
+  const r = await execDirect(
     `SELECT * FROM changes
      WHERE competitor_id = ${id} ORDER BY detected_at DESC`
   );
@@ -378,13 +377,12 @@ export async function listRecentChanges(limit = 20): Promise<(Change & {
   competitor_url: string;
 })[]> {
   if (!process.env.TURSO_DATABASE_URL) return [];
-  const r = await exec(
+  const r = await execDirect(
     `SELECT c.*, comp.name AS competitor_name, comp.url AS competitor_url
      FROM changes c
      JOIN competitors comp ON comp.id = c.competitor_id
      ORDER BY c.detected_at DESC
-     LIMIT ?`,
-    [limit]
+     LIMIT ${limit}`
   );
   return rowsToObjects<ChangeRow & { competitor_name: string; competitor_url: string }>(r).map(
     (r) => ({ ...mapChange(r), competitor_name: r.competitor_name, competitor_url: r.competitor_url })
