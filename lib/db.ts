@@ -596,3 +596,128 @@ export async function getCounts(): Promise<{
     changes: h[0] ? Object.values(h[0])[0] : 0,
   };
 }
+
+// ============================================================================
+// Positioning map data
+// ============================================================================
+
+export async function getPositioningData(): Promise<{
+  competitor_name: string;
+  features_count: number;
+  pricing_count: number;
+  headline_length: number;
+  has_ai_keywords: boolean;
+  category: string | null;
+}[]> {
+  if (!process.env.TURSO_DATABASE_URL) return [];
+  const comps = await listCompetitors();
+  const result: any[] = [];
+  for (const comp of comps) {
+    const r = await execDirect(
+      `SELECT signals FROM snapshots
+       WHERE competitor_id = ${comp.id} AND fetch_status = 'success'
+       ORDER BY captured_at DESC LIMIT 1`
+    );
+    const row = rowsToObjects<{ signals: string }>(r)[0];
+    let features_count = 0;
+    let pricing_count = 0;
+    let headline_length = 0;
+    let has_ai_keywords = false;
+    if (row) {
+      try {
+        const s = JSON.parse(row.signals);
+        features_count = (s.features || []).length;
+        pricing_count = (s.pricing || []).length;
+        headline_length = (s.headline || "").length;
+        const allText = [s.seoTitle, s.headline, ...(s.subheadings || [])].filter(Boolean).join(" ").toLowerCase();
+        has_ai_keywords = /\b(ai|artificial intelligence|machine learning|llm|gpt|copilot)\b/i.test(allText);
+      } catch {}
+    }
+    result.push({ competitor_name: comp.name, features_count, pricing_count, headline_length, has_ai_keywords, category: comp.category });
+  }
+  return result;
+}
+
+// ============================================================================
+// Reaction tracker
+// ============================================================================
+
+export async function getReactionData(): Promise<{
+  change_type: string;
+  events: { competitor_name: string; detected_at: string }[];
+}[]> {
+  if (!process.env.TURSO_DATABASE_URL) return [];
+  const r = await execDirect(
+    `SELECT c.change_type, c.detected_at, comp.name AS competitor_name
+     FROM changes c
+     JOIN competitors comp ON comp.id = c.competitor_id
+     ORDER BY c.change_type, c.detected_at`
+  );
+  const rows = rowsToObjects<{ change_type: string; detected_at: string; competitor_name: string }>(r);
+  const grouped: Record<string, { competitor_name: string; detected_at: string }[]> = {};
+  for (const row of rows) {
+    if (!grouped[row.change_type]) grouped[row.change_type] = [];
+    grouped[row.change_type].push({ competitor_name: row.competitor_name, detected_at: row.detected_at });
+  }
+  return Object.entries(grouped).map(([change_type, events]) => ({ change_type, events }));
+}
+
+// ============================================================================
+// Positioning drift — keyword tracking per competitor over time
+// ============================================================================
+
+export async function getDriftData(): Promise<{
+  competitor_name: string;
+  snapshots: { captured_at: string; headline: string; seo_title: string }[];
+}[]> {
+  if (!process.env.TURSO_DATABASE_URL) return [];
+  const comps = await listCompetitors();
+  const result: any[] = [];
+  for (const comp of comps) {
+    const r = await execDirect(
+      `SELECT captured_at, signals FROM snapshots
+       WHERE competitor_id = ${comp.id} AND fetch_status = 'success'
+       ORDER BY captured_at ASC LIMIT 20`
+    );
+    const rows = rowsToObjects<{ captured_at: string; signals: string }>(r);
+    const snapshots = rows.map((row) => {
+      let headline = "";
+      let seo_title = "";
+      try {
+        const s = JSON.parse(row.signals);
+        headline = s.headline || "";
+        seo_title = s.seoTitle || "";
+      } catch {}
+      return { captured_at: row.captured_at, headline, seo_title };
+    });
+    result.push({ competitor_name: comp.name, snapshots });
+  }
+  return result;
+}
+
+// ============================================================================
+// Weekly brief
+// ============================================================================
+
+export async function getWeeklyBrief(): Promise<{
+  period: { from: string; to: string };
+  total_changes: number;
+  changes: { competitor_name: string; change_type: string; severity: string; detected_at: string; summary: string }[];
+}> {
+  if (!process.env.TURSO_DATABASE_URL) return { period: { from: "", to: "" }, total_changes: 0, changes: [] };
+  const to = new Date().toISOString();
+  const from = new Date(Date.now() - 7 * 86400000).toISOString();
+  const r = await execDirect(
+    `SELECT c.change_type, c.severity, c.detected_at, comp.name AS competitor_name
+     FROM changes c
+     JOIN competitors comp ON comp.id = c.competitor_id
+     WHERE c.detected_at >= '${from}'
+     ORDER BY c.detected_at DESC`
+  );
+  const rows = rowsToObjects<{ change_type: string; severity: string; detected_at: string; competitor_name: string }>(r);
+  return {
+    period: { from, to },
+    total_changes: rows.length,
+    changes: rows.map((r) => ({ ...r, summary: `${r.competitor_name} had a ${r.change_type} change` })),
+  };
+}

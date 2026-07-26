@@ -10,6 +10,10 @@ import {
   Search,
   Bell,
   Sparkles,
+  Map,
+  Zap,
+  TrendingUp,
+  FileText,
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,8 +22,12 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/timeline", label: "Timeline", icon: History },
+  { href: "/positioning-map", label: "Map", icon: Map },
   { href: "/battle-card", label: "Battle Card", icon: Sword },
   { href: "/gaps", label: "Gaps", icon: Search },
+  { href: "/reaction-tracker", label: "Reactions", icon: Zap },
+  { href: "/positioning-drift", label: "Drift", icon: TrendingUp },
+  { href: "/brief", label: "Brief", icon: FileText },
   { href: "/insights", label: "Insights", icon: Sparkles },
   { href: "/settings/alerts", label: "Alerts", icon: Bell },
 ];

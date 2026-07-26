@@ -15,6 +15,7 @@ const SUGGESTIONS = [
   "Summarize all messaging changes this week",
   "Which competitor has the most changes recently?",
   "Are there any common patterns across competitor updates?",
+  "What counter-strategies should I consider?",
   "What should I be most concerned about?",
 ];
 
@@ -123,6 +124,50 @@ export default function InsightsPage() {
           <Send className="h-4 w-4" />
         </Button>
       </form>
+
+      {/* Copilot suggestions */}
+      <LandingPageCopilot />
     </div>
+  );
+}
+
+function LandingPageCopilot() {
+  const [suggestions, setSuggestions] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/ai/copilot");
+      const data = await res.json();
+      setSuggestions(data.suggestions);
+    } catch {
+      setSuggestions("Could not load suggestions.");
+    }
+    setLoading(false);
+  }
+
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Sparkles className="h-4 w-4 text-primary" /> Landing Page Copilot
+        </CardTitle>
+        <CardDescription>
+          AI-generated counter-strategies based on recent competitor moves.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!suggestions && !loading && (
+          <Button variant="outline" size="sm" onClick={load}>
+            Generate counter-strategies
+          </Button>
+        )}
+        {loading && <p className="text-sm text-muted-foreground animate-pulse">Analyzing competitor moves...</p>}
+        {suggestions && (
+          <div className="text-sm leading-relaxed whitespace-pre-wrap">{suggestions}</div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
