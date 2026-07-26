@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
-import { getCounts } from "@/lib/db";
+import { getCounts, listCompetitors } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/stats — aggregate counts for the dashboard header cards
 export async function GET() {
   const counts = await getCounts();
-  return NextResponse.json(counts);
+  const competitors = await listCompetitors();
+  return NextResponse.json({
+    counts,
+    list: competitors.map((c) => ({ id: c.id, name: c.name })),
+  });
 }
