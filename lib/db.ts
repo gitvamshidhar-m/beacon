@@ -268,10 +268,11 @@ export async function deleteCompetitor(id: number): Promise<void> {
 
 export async function listSnapshots(competitorId: number): Promise<Snapshot[]> {
   if (!process.env.TURSO_DATABASE_URL) return [];
+  const id = Number(competitorId);
+  // Inline the id to avoid Turso integer parameter binding issues
   const r = await exec(
     `SELECT * FROM snapshots
-     WHERE competitor_id = ? ORDER BY captured_at DESC`,
-    [competitorId]
+     WHERE competitor_id = ${id} ORDER BY captured_at DESC`
   );
   return rowsToObjects<SnapshotRow>(r).map(mapSnapshot);
 }
@@ -285,11 +286,11 @@ export async function getSnapshot(id: number): Promise<Snapshot | undefined> {
 
 export async function getLatestSnapshot(competitorId: number): Promise<Snapshot | undefined> {
   if (!process.env.TURSO_DATABASE_URL) return undefined;
+  const id = Number(competitorId);
   const r = await exec(
     `SELECT * FROM snapshots
-     WHERE competitor_id = ? AND fetch_status = 'success'
-     ORDER BY captured_at DESC LIMIT 1`,
-    [competitorId]
+     WHERE competitor_id = ${id} AND fetch_status = 'success'
+     ORDER BY captured_at DESC LIMIT 1`
   );
   const row = rowsToObjects<SnapshotRow>(r)[0];
   return row ? mapSnapshot(row) : undefined;
@@ -327,10 +328,10 @@ export async function insertSnapshot(input: {
 
 export async function listChanges(competitorId: number): Promise<Change[]> {
   if (!process.env.TURSO_DATABASE_URL) return [];
+  const id = Number(competitorId);
   const r = await exec(
     `SELECT * FROM changes
-     WHERE competitor_id = ? ORDER BY detected_at DESC`,
-    [competitorId]
+     WHERE competitor_id = ${id} ORDER BY detected_at DESC`
   );
   return rowsToObjects<ChangeRow>(r).map(mapChange);
 }
@@ -405,11 +406,9 @@ export async function getCounts(): Promise<{
   changes: number;
 }> {
   if (!process.env.TURSO_DATABASE_URL) return { competitors: 0, snapshots: 0, changes: 0 };
-  const [comp, snap, ch] = await Promise.all([
-    exec("SELECT COUNT(*) AS c FROM competitors"),
-    exec("SELECT COUNT(*) AS c FROM snapshots"),
-    exec("SELECT COUNT(*) AS c FROM changes"),
-  ]);
+  const comp = await exec("SELECT COUNT(*) AS c FROM competitors");
+  const snap = await exec("SELECT COUNT(*) AS c FROM snapshots");
+  const ch = await exec("SELECT COUNT(*) AS c FROM changes");
   return {
     competitors: rowsToObjects<{ c: number }>(comp)[0]?.c ?? 0,
     snapshots: rowsToObjects<{ c: number }>(snap)[0]?.c ?? 0,
