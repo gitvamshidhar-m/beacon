@@ -42,14 +42,10 @@ async function fetchJSON<T>(url: string): Promise<T> {
 }
 
 export default async function DashboardPage() {
-  const base = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
-
   const [counts, compData, changesData] = await Promise.all([
-    fetchJSON<{ competitors: number; snapshots: number; changes: number }>(`${base}/api/stats`),
-    fetchJSON<{ competitors: Competitor[] }>(`${base}/api/competitors`),
-    fetchJSON<{ changes: Change[] }>(`${base}/api/changes?limit=10`),
+    fetchJSON<{ competitors: number; snapshots: number; changes: number }>("/api/stats"),
+    fetchJSON<{ competitors: Competitor[] }>("/api/competitors"),
+    fetchJSON<{ changes: Change[] }>("/api/changes?limit=10"),
   ]);
 
   const competitors = compData.competitors;
