@@ -1,3 +1,13 @@
+---
+title: Beacon
+emoji: 📡
+colorFrom: indigo
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Beacon — Competitor Change Radar
 
 Track strategic changes on competitor websites and get notified when their pricing, messaging, features, CTAs, or SEO shift.
