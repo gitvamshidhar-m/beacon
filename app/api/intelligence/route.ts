@@ -14,6 +14,8 @@ interface CompetitorIntel {
   changesLast7d: number;
   changesLast30d: number;
   highSeverityLast30d: number;
+  changeTypeBreakdown: Record<string, number>;
+  severityDistribution: Record<string, number>;
 }
 
 export async function GET() {
@@ -44,6 +46,13 @@ export async function GET() {
       : velocity30 < velocity60 - 1 ? "decelerating"
       : "stable";
 
+    const changeTypeBreakdown: Record<string, number> = {};
+    const severityDistribution: Record<string, number> = {};
+    for (const c of compChanges) {
+      changeTypeBreakdown[c.change_type] = (changeTypeBreakdown[c.change_type] || 0) + 1;
+      severityDistribution[c.severity] = (severityDistribution[c.severity] || 0) + 1;
+    }
+
     return {
       name: comp.name,
       riskScore,
@@ -54,6 +63,8 @@ export async function GET() {
       changesLast7d,
       changesLast30d,
       highSeverityLast30d,
+      changeTypeBreakdown,
+      severityDistribution,
     };
   });
 

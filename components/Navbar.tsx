@@ -15,6 +15,7 @@ import {
   TrendingUp,
   FileText,
   Shield,
+  GitCompare,
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/positioning-drift", label: "Drift", icon: TrendingUp },
   { href: "/brief", label: "Brief", icon: FileText },
   { href: "/intelligence", label: "Intel", icon: Shield },
+  { href: "/compare", label: "Compare", icon: GitCompare },
   { href: "/insights", label: "Insights", icon: Sparkles },
   { href: "/settings/alerts", label: "Alerts", icon: Bell },
 ];

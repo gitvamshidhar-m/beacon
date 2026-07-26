@@ -13,6 +13,8 @@ interface CompetitorIntel {
   changesLast7d: number;
   changesLast30d: number;
   highSeverityLast30d: number;
+  changeTypeBreakdown: Record<string, number>;
+  severityDistribution: Record<string, number>;
 }
 
 interface SwotEntry {
@@ -29,6 +31,12 @@ interface Data {
   recentHighImpactChanges: { competitor_name: string; change_type: string; severity: string; detected_at: string }[];
 }
 
+const TYPE_COLORS: Record<string, string> = {
+  Pricing: "bg-red-400", Messaging: "bg-blue-400", Feature: "bg-green-400",
+  CTA: "bg-purple-400", SEO: "bg-yellow-400", Navigation: "bg-gray-400", Mixed: "bg-orange-400",
+};
+const SEV_COLORS: Record<string, string> = { high: "bg-red-400", medium: "bg-yellow-400", low: "bg-green-400" };
+
 function TrendIcon({ trend }: { trend: string }) {
   if (trend === "accelerating") return <TrendingUp className="h-4 w-4 text-red-500" />;
   if (trend === "decelerating") return <TrendingDown className="h-4 w-4 text-green-500" />;
@@ -40,24 +48,40 @@ function RiskBadge({ score }: { score: number }) {
   return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${color}`}>{score}/100</span>;
 }
 
+function MiniBar({ data, colors }: { data: Record<string, number>; colors: Record<string, string> }) {
+  const total = Object.values(data).reduce((a, b) => a + b, 0);
+  if (total === 0) return <div className="h-1.5 w-full rounded-full bg-muted" />;
+  return (
+    <div className="flex h-1.5 w-full overflow-hidden rounded-full">
+      {Object.entries(data).map(([k, v]) => (
+        <div key={k} className={`${colors[k] || "bg-muted"}`} style={{ width: `${(v / total) * 100}%` }} title={`${k}: ${v}`} />
+      ))}
+    </div>
+  );
+}
+
 function SwotCard({ swot }: { swot: SwotEntry }) {
   return (
     <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
       <div className="rounded border border-green-200 bg-green-50 p-2">
         <p className="font-semibold text-green-700 mb-1">Strengths</p>
         {swot.strengths?.map((s, i) => <p key={i} className="text-green-600">+ {s}</p>)}
+        {(!swot.strengths || swot.strengths.length === 0) && <p className="text-green-400 italic">No data</p>}
       </div>
       <div className="rounded border border-red-200 bg-red-50 p-2">
         <p className="font-semibold text-red-700 mb-1">Weaknesses</p>
         {swot.weaknesses?.map((s, i) => <p key={i} className="text-red-600">- {s}</p>)}
+        {(!swot.weaknesses || swot.weaknesses.length === 0) && <p className="text-red-400 italic">No data</p>}
       </div>
       <div className="rounded border border-blue-200 bg-blue-50 p-2">
         <p className="font-semibold text-blue-700 mb-1">Opportunities</p>
         {swot.opportunities?.map((s, i) => <p key={i} className="text-blue-600">→ {s}</p>)}
+        {(!swot.opportunities || swot.opportunities.length === 0) && <p className="text-blue-400 italic">No data</p>}
       </div>
       <div className="rounded border border-orange-200 bg-orange-50 p-2">
         <p className="font-semibold text-orange-700 mb-1">Threats</p>
         {swot.threats?.map((s, i) => <p key={i} className="text-orange-600">! {s}</p>)}
+        {(!swot.threats || swot.threats.length === 0) && <p className="text-orange-400 italic">No data</p>}
       </div>
     </div>
   );
@@ -125,6 +149,20 @@ export default function IntelligencePage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                {/* Change type & severity bars */}
+                {comp.changesLast30d > 0 && (
+                  <div className="mb-2 space-y-1">
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>Change types</span>
+                      <span>{comp.changesLast30d} total</span>
+                    </div>
+                    <MiniBar data={comp.changeTypeBreakdown} colors={TYPE_COLORS} />
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-0.5">
+                      <span>Severity</span>
+                    </div>
+                    <MiniBar data={comp.severityDistribution} colors={SEV_COLORS} />
+                  </div>
+                )}
                 {/* Mini bar chart */}
                 <div className="flex items-end gap-1 h-6 mb-2">
                   {Array.from({ length: Math.min(comp.changesLast30d, 20) }).map((_, i) => (
