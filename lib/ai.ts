@@ -1,5 +1,5 @@
 const GROQ_BASE = "https://api.groq.com/openai/v1";
-const MODEL = "deepseek-r1-distill-llama-70b";
+const MODEL = "llama-3.3-70b-versatile";
 
 async function groqChat(messages: { role: string; content: string }[]): Promise<string> {
   const key = process.env.GROQ_API_KEY;
@@ -21,7 +21,9 @@ async function groqChat(messages: { role: string; content: string }[]): Promise<
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Groq error ${res.status}: ${text}`);
+    let clean = text;
+    try { clean = JSON.parse(text).error?.message || text; } catch {}
+    throw new Error(`Groq error ${res.status}: ${clean}`);
   }
 
   const data = await res.json();
