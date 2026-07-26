@@ -13,81 +13,16 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const dbUrl = !!process.env.TURSO_DATABASE_URL;
+    const dbToken = !!process.env.TURSO_AUTH_TOKEN;
+
     const competitors = await listCompetitors();
 
-    const results: {
-      id: number;
-      name: string;
-      status: string;
-      changed?: boolean;
-    }[] = [];
-
-    for (const comp of competitors) {
-      try {
-        const priorSnapshot = await getLatestSnapshot(comp.id);
-
-        const result = await fetchPage(comp.url);
-        if (result.status !== "success") {
-          results.push({
-            id: comp.id,
-            name: comp.name,
-            status: result.status,
-          });
-          continue;
-        }
-
-        const signals = extractSignals(result.html);
-        const contentHash = hashSignals(signals);
-
-        const snapshotId = await insertSnapshot({
-          competitor_id: comp.id,
-          status_code: result.statusCode,
-          capture_method: "auto",
-          fetch_status: "success",
-          html: result.html,
-          signals,
-          content_hash: contentHash,
-        });
-
-        let changed = false;
-        if (priorSnapshot) {
-          const candidate = diffSnapshots(priorSnapshot, {
-            id: snapshotId,
-            competitor_id: comp.id,
-            captured_at: new Date().toISOString(),
-            status_code: result.statusCode,
-            capture_method: "auto",
-            fetch_status: "success",
-            html: result.html,
-            signals,
-            content_hash: contentHash,
-          });
-          if (candidate) {
-            await insertChange(candidate);
-            changed = true;
-          }
-        }
-
-        results.push({
-          id: comp.id,
-          name: comp.name,
-          status: "success",
-          changed,
-        });
-      } catch (e) {
-        results.push({
-          id: comp.id,
-          name: comp.name,
-          status: "error",
-          changed: false,
-        });
-      }
-    }
-
     return NextResponse.json({
-      done: true,
-      total: competitors.length,
-      results,
+      dbUrl,
+      dbToken,
+      competitorsCount: competitors.length,
+      competitors: competitors.map((c) => ({ id: c.id, name: c.name })),
     });
   } catch (err) {
     return NextResponse.json(
