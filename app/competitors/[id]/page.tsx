@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { DeleteCompetitorButton } from "@/components/DeleteCompetitorButton";
 import { SnapshotActions } from "@/components/SnapshotActions";
 import { ChangeFeed } from "@/components/ChangeFeed";
+import { SignalsDisplay } from "@/components/SignalsDisplay";
 import {
   getCompetitor,
   listSnapshots,
@@ -88,6 +89,21 @@ export default async function CompetitorDetailPage({
       <div className="mb-6">
         <SnapshotActions competitorId={competitor.id} competitorUrl={competitor.url} />
       </div>
+
+      {/* Signals from latest snapshot */}
+      {lastSuccess && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-lg">Extracted signals</CardTitle>
+            <CardDescription>
+              Marketing signals detected in the latest successful snapshot.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SignalsDisplay signals={lastSuccess.signals} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Layout grid */}
       <div className="grid gap-6 lg:grid-cols-2">
